@@ -1,0 +1,65 @@
+{
+  "name": "regex-shield",
+  "version": "1.0.0",
+  "description": "Zero-dependency ReDoS and catastrophic-backtracking analyzer for JavaScript regular expressions, with a real regex AST parser and CWE-1333 classification.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./cjs/index.cjs",
+  "module": "./src/index.mjs",
+  "types": "./types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./types/index.d.ts",
+      "import": "./src/index.mjs",
+      "require": "./cjs/index.cjs",
+      "default": "./src/index.mjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "regex-shield": "./bin/regex-shield.mjs"
+  },
+  "files": [
+    "src",
+    "cjs",
+    "types",
+    "bin",
+    "README.md",
+    "LICENSE",
+    "SECURITY.md",
+    "CONTRIBUTING.md"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "test": "node --test tests/",
+    "test:coverage": "node --test --experimental-test-coverage tests/",
+    "bench": "node benchmarks/bench.mjs",
+    "build:cjs": "node scripts/build-cjs.mjs",
+    "check:cjs": "node scripts/build-cjs.mjs --check"
+  },
+  "dependencies": {},
+  "devDependencies": {},
+  "keywords": [
+    "redos",
+    "regex",
+    "regexp",
+    "security",
+    "catastrophic-backtracking",
+    "cwe-1333",
+    "linter",
+    "static-analysis",
+    "zero-dependency",
+    "safe-regex"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/draarivpatel-ui/regex-shield.git"
+  },
+  "bugs": {
+    "url": "https://github.com/draarivpatel-ui/regex-shield/issues"
+  },
+  "homepage": "https://github.com/draarivpatel-ui/regex-shield#readme"
+}
