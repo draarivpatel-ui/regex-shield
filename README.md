@@ -112,12 +112,12 @@ All findings map to CWE-1333, Inefficient Regular Expression Complexity.
 | Code | Rule | Typical shape | Worst case |
 | --- | --- | --- | --- |
 | RS001 | Nested quantifiers over an overlapping body | `(a+)+$`, `(\d+)*$` | Exponential |
-| RS002 | Adjacent quantified atoms match overlapping characters | `\d+\d+$`, `.*.*$` | Quadratic |
+| RS002 | Adjacent quantified atoms match overlapping characters | `\d+\d+$`, `.*.*$`, `.*a.*$` | Quadratic |
 | RS003 | Quantified alternation with overlapping branches | `(a\|aa)+$`, `(a\|)+$` | Exponential |
 | RS004 | Backreference inside a quantified loop | `(?:(a)\1)+$` | Exponential |
 | RS005 | Unbounded lookaround inside a quantified loop | `(?:(?=a+)\w)+$` | Quadratic |
 | RS006 | Quantifier body can match the empty string | `(?:a?)*$` | Quadratic |
-| RS007 | Chain of three or more unbounded wildcards | `.*.*.*$` | Cubic |
+| RS007 | Chain of three or more unbounded wildcards | `.*.*.*$`, `.*a.*b.*c` | Cubic |
 | RS008 | Unanchored unbounded scan over a broad set | `.+`, `[^<]+` | Linear |
 
 RS008 is informational and only emitted when no stronger finding exists. The
@@ -191,11 +191,21 @@ documented here so the boundary of the rule set is explicit rather than implied.
   particular engine will hang, and a clean result is not a formal proof.
 - Annex B syntax is reproduced where it changes the reading of a pattern:
   literal braces, legacy octal escapes, identity escapes, and the literal hyphen
-  beside a class escape.
+  beside a class escape. In particular `\8` and `\9` are identity escapes inside
+  a class, exactly as the engine reads them.
+- The `i` flag folds literal and class sets before any overlap test, so `(a|A)+`
+  and `[a-z]+[A-Z]+` are reported under `/i`. The `s` flag widens the dot to the
+  whole code space, and without it the dot excludes all four line terminators.
+- A one character separator does not split a chain when both neighbouring scans
+  can consume it: `.*a.*` is quadratic and `.*a.*b.*c` is cubic.
+- Patterns nested more than 500 groups deep are rejected with `RegexParseError`
+  before the recursive parser can exhaust the stack. v-mode class set operators
+  (`--`, `&&`, nested classes, `\q{...}`) are rejected the same way instead of
+  being silently read as flat literals.
 
 ## Tests
 
-The suite has 245 deterministic tests and runs on the built in Node test runner:
+The suite has 262 deterministic tests and runs on the built in Node test runner:
 
 ```
 npm test
@@ -204,8 +214,9 @@ npm run test:coverage
 
 The tests cover the parser, the character set algebra, every rule, the API
 surface, the CLI, witness generation, the historical CVE corpus, a production
-regex corpus, and ESM/CommonJS parity. No network access, no fixtures outside
-the repository, no timing assertions.
+regex corpus, flag-sensitive sets (`i` and `s`), literal separated backtracking
+chains, parser resource limits, and ESM/CommonJS parity. No network access, no
+fixtures outside the repository, no timing assertions.
 
 ## Benchmarks
 

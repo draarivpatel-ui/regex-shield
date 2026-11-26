@@ -105,11 +105,28 @@ function anIsZeroWidth(node) {
   return node.type === 'anchor' || (node.type === 'group' && node.kind === 'lookaround');
 }
 
+// A literal carries every code point the /i flag lets it match.
+function anCharSet(node) {
+  if (node.codePoints && node.codePoints.length > 0) return CharSet.fromCodePoints(node.codePoints);
+  return CharSet.literal(node.codePoint);
+}
+
+// The set a single character sequence element consumes, or null when the
+// element is not a plain one character atom. Used to see through separators
+// such as ".*a.*" where both scans can also consume the "a".
+function anBridgeSet(node) {
+  const inner = anUnwrap(node);
+  if (!inner) return null;
+  if (inner.type === 'char') return anCharSet(inner);
+  if (inner.type === 'class' || inner.type === 'dot') return inner.set;
+  return null;
+}
+
 function anStartInfo(node) {
   if (!node) return { nullable: true, set: null };
   switch (node.type) {
     case 'char':
-      return { nullable: false, set: CharSet.literal(node.codePoint) };
+      return { nullable: false, set: anCharSet(node) };
     case 'class':
     case 'dot':
       return { nullable: false, set: node.set };
@@ -157,7 +174,7 @@ function anLastInfo(node) {
   if (!node) return { nullable: true, set: null };
   switch (node.type) {
     case 'char':
-      return { nullable: false, set: CharSet.literal(node.codePoint) };
+      return { nullable: false, set: anCharSet(node) };
     case 'class':
     case 'dot':
       return { nullable: false, set: node.set };
@@ -205,7 +222,7 @@ function anConsumedSet(node) {
   if (!node) return null;
   switch (node.type) {
     case 'char':
-      return CharSet.literal(node.codePoint);
+      return anCharSet(node);
     case 'class':
     case 'dot':
       return node.set;
@@ -528,25 +545,42 @@ function anOverlapPairs(sequence) {
     // makes the boundary unambiguous.
     const leftSet = anLastInfo(leftForm.body).set;
     if (!leftSet) continue;
-    const candidates = anFirstQuantifiers(items[index + 1], []);
-    const seen = new Set();
-    for (const rightForm of candidates) {
-      if (rightForm.max !== Infinity) continue;
-      if (seen.has(rightForm.index)) continue;
-      seen.add(rightForm.index);
-      const rightSet = anStartInfo(rightForm.body).set;
-      if (!rightSet || !leftSet.intersects(rightSet)) continue;
-      const shared = leftSet.intersect(rightSet);
-      if (shared.isEmpty) continue;
-      pairs.push({
-        leftElement: items[index],
-        rightElement: items[index + 1],
-        left: leftForm,
-        right: rightForm,
-        leftSet,
-        rightSet,
-        shared
-      });
+    // A one character separator does not make the boundary unambiguous when
+    // both neighbouring scans can consume that same character. ".*a.*" and
+    // "[^@\s]+@[^@\s]+\.[^@\s]+" backtrack quadratically exactly because the
+    // separator can slide between the two runs.
+    for (const offset of [1, 2]) {
+      const rightElement = items[index + offset];
+      if (!rightElement) break;
+      let bridgeSet = null;
+      if (offset === 2) {
+        bridgeSet = anBridgeSet(items[index + 1]);
+        if (!bridgeSet) continue;
+      }
+      const candidates = anFirstQuantifiers(rightElement, []);
+      const seen = new Set();
+      for (const rightForm of candidates) {
+        if (rightForm.max !== Infinity) continue;
+        if (seen.has(rightForm.index)) continue;
+        seen.add(rightForm.index);
+        const rightSet = anStartInfo(rightForm.body).set;
+        if (!rightSet || !leftSet.intersects(rightSet)) continue;
+        const shared = leftSet.intersect(rightSet);
+        if (shared.isEmpty) continue;
+        // The separator must be able to be the same character that both scans
+        // accept; otherwise one of them cannot slide across it.
+        if (bridgeSet && !bridgeSet.intersects(shared)) continue;
+        pairs.push({
+          leftElement: items[index],
+          rightElement,
+          left: leftForm,
+          right: rightForm,
+          leftSet,
+          rightSet,
+          shared,
+          bridge: bridgeSet
+        });
+      }
     }
   }
   return pairs;
@@ -687,9 +721,11 @@ function anCheckAdjacentQuantifiers(sequence, add, suppressed) {
       complexity: 'quadratic',
       index: pair.right.index,
       title: AN_RULE_META[RULES.OVERLAPPING_ADJACENT].title,
-      message:
-        `"${anDescribeBounds(pair.left)}" and "${anDescribeBounds(pair.right)}" are adjacent and both match ` +
-        `${pair.shared.describe()}.`,
+      message: pair.bridge
+        ? `"${anDescribeBounds(pair.left)}" and "${anDescribeBounds(pair.right)}" both match ` +
+          `${pair.shared.describe()} and the character between them is one both can consume.`
+        : `"${anDescribeBounds(pair.left)}" and "${anDescribeBounds(pair.right)}" are adjacent and both match ` +
+          `${pair.shared.describe()}.`,
       explanation:
         'An adjacent pair of quantified atoms that accept the same characters leaves the engine no single ' +
         'boundary between them. For every possible split point the remaining suffix is retried, which is ' +
@@ -856,79 +892,106 @@ function anCheckNullable(quantifier, add) {
 }
 
 function anCheckWildcardChain(sequence, add, suppressed) {
-  // Consecutive consuming elements of the sequence. A literal breaks a chain,
-  // which is what keeps patterns such as an email address from looking like a
-  // run of wildcards.
+  // Every consuming element, classified as an unbounded quantifier, a one
+  // character bridge, or a barrier. A literal only breaks a chain when at
+  // least one neighbouring scan cannot consume it; ".*a.*b.*c" is a cubic
+  // chain precisely because both scans around "a" and "b" match every
+  // separator character.
   const items = [];
   for (const element of sequence.elements) {
     if (anIsZeroWidth(element)) continue;
     const form = anQuantifiedForm(element);
-    items.push({
-      element,
-      form: form && form.max === Infinity ? form : null,
-      set: form && form.max === Infinity ? anConsumedSet(form.body) : null
-    });
-  }
-  let runStart = 0;
-  while (runStart < items.length) {
-    if (!items[runStart].form) {
-      runStart += 1;
+    if (form && form.max === Infinity) {
+      items.push({ element, form, set: anConsumedSet(form.body), bridge: false });
       continue;
     }
-    let runEnd = runStart;
-    while (runEnd + 1 < items.length && items[runEnd + 1].form) {
-      const current = items[runEnd].set;
-      const next = items[runEnd + 1].set;
-      const connected = !current || !next || current.intersects(next);
-      if (!connected) break;
-      runEnd += 1;
+    const bridgeSet = anBridgeSet(element);
+    items.push({ element, form: null, set: bridgeSet, bridge: bridgeSet !== null });
+  }
+  const runs = [];
+  let index = 0;
+  while (index < items.length) {
+    if (!items[index].form) {
+      index += 1;
+      continue;
     }
-    const length = runEnd - runStart + 1;
-    if (length >= 3) {
-      const first = items[runStart];
-      const last = items[runEnd];
-      const headSet = first.set;
-      const secondSet = items[runStart + 1].set;
-      let sampleSource = headSet;
-      let sample = null;
-      if (headSet && secondSet) {
-        const difference = anDifference(headSet, secondSet);
-        if (!difference.isEmpty) {
-          sampleSource = difference;
-          sample = difference.sampleCodePoint();
-        } else {
-          sample = headSet.intersect(secondSet).sampleCodePoint();
-        }
-      } else if (headSet) {
-        sample = headSet.sampleCodePoint();
+    const run = [index];
+    let cursor = index;
+    for (;;) {
+      const next = items[cursor + 1];
+      const after = items[cursor + 2];
+      if (next && next.form) {
+        const currentSet = items[cursor].set;
+        const nextSet = next.set;
+        if (currentSet && nextSet && !currentSet.intersects(nextSet)) break;
+        run.push(cursor + 1);
+        cursor += 1;
+        continue;
       }
-      const terminator = anPickTerminator(items.slice(runStart, runEnd + 1).map((item) => item.set));
-      for (let index = runStart; index <= runEnd; index += 1) suppressed.add(items[index].element);
-      add({
-        rule: RULES.MULTIPLE_WILDCARDS,
-        severity: 'high',
-        complexity: 'cubic',
-        index: first.form.index,
-        title: AN_RULE_META[RULES.MULTIPLE_WILDCARDS].title,
-        message:
-          `${length} unbounded quantifiers in a row ("${anDescribeBounds(first.form)}" ... ` +
-          `"${anDescribeBounds(last.form)}") all match overlapping characters.`,
-        explanation:
-          'Each unbounded quantifier in the chain can scan an arbitrary suffix. When their character ' +
-          'sets overlap, a failing suffix makes the engine retry the tail once per split point, giving ' +
-          'polynomial backtracking of degree ' + (length - 1) + ' (cubic or worse for three or more).',
-        remediation:
-          'Replace the greedy scans with a single bounded parse, make the delimiters explicit, or anchor ' +
-          'the pattern and cap the input length before matching.',
-        detail: {
-          sampleChar: sample === null ? 'a' : String.fromCodePoint(sample),
-          terminator,
-          ranges: anRanges(sampleSource),
-          chainLength: length
+      if (next && next.bridge && after && after.form) {
+        const bridgeSet = next.set;
+        const currentSet = items[cursor].set;
+        const nextSet = after.set;
+        const overlap = !currentSet || !nextSet || currentSet.intersects(nextSet);
+        const shared = currentSet && nextSet ? currentSet.intersect(nextSet) : (currentSet || nextSet);
+        const bridgeFits = !shared || bridgeSet.intersects(shared);
+        if (overlap && bridgeFits) {
+          run.push(cursor + 1, cursor + 2);
+          cursor += 2;
+          continue;
         }
-      });
+      }
+      break;
     }
-    runStart = runEnd + 1;
+    runs.push(run);
+    index = cursor + 1;
+  }
+  for (const run of runs) {
+    const quantifierItems = run.map((entry) => items[entry]).filter((item) => item.form);
+    const length = quantifierItems.length;
+    if (length < 3) continue;
+    const first = quantifierItems[0];
+    const last = quantifierItems[length - 1];
+    const headSet = first.set;
+    const secondSet = quantifierItems[1].set;
+    let sampleSource = headSet;
+    let sample = null;
+    if (headSet && secondSet) {
+      const difference = anDifference(headSet, secondSet);
+      if (!difference.isEmpty) {
+        sampleSource = difference;
+        sample = difference.sampleCodePoint();
+      } else {
+        sample = headSet.intersect(secondSet).sampleCodePoint();
+      }
+    } else if (headSet) {
+      sample = headSet.sampleCodePoint();
+    }
+    const terminator = anPickTerminator(quantifierItems.map((item) => item.set));
+    for (const entry of run) suppressed.add(items[entry].element);
+    add({
+      rule: RULES.MULTIPLE_WILDCARDS,
+      severity: 'high',
+      complexity: 'cubic',
+      index: first.form.index,
+      title: AN_RULE_META[RULES.MULTIPLE_WILDCARDS].title,
+      message:
+        `${length} unbounded quantifiers in a row ("${anDescribeBounds(first.form)}" ... ` +
+        `"${anDescribeBounds(last.form)}") all match overlapping characters.`,
+      explanation:
+        'Each unbounded quantifier in the chain can scan an arbitrary suffix. When their character ' +
+        'sets overlap, a failing suffix makes the engine retry the tail once per split point, giving ' +
+        'polynomial backtracking of degree ' + (length - 1) + ' (cubic or worse for three or more).',
+      remediation:
+        'Replace the greedy scans with a single bounded parse, make the delimiters explicit, or anchor ' +
+        'the pattern and cap the input length before matching.',
+      detail: {
+        sampleChar: sample === null ? 'a' : String.fromCodePoint(sample),
+        terminator,
+        ranges: anRanges(sampleSource),
+        chainLength: length
+      }
+    });
   }
 }
 
@@ -936,11 +999,23 @@ function anCheckWildcardChain(sequence, add, suppressed) {
 // Analysis
 // ---------------------------------------------------------------------------
 
+// Read options as own properties only. A polluted Object.prototype must not be
+// able to supply a threshold, a cap, or a pattern the caller never passed.
+function anOwn(options, name) {
+  if (!options || typeof options !== 'object') return undefined;
+  return Object.prototype.hasOwnProperty.call(options, name) ? options[name] : undefined;
+}
+
 function anNormalizeInput(input, options) {
   if (input instanceof RegExp) return { pattern: input.source, flags: input.flags };
-  if (typeof input === 'string') return { pattern: input, flags: options.flags || '' };
-  if (input && typeof input === 'object' && typeof input.pattern === 'string') {
-    return { pattern: input.pattern, flags: input.flags || '' };
+  if (typeof input === 'string') {
+    const flags = anOwn(options, 'flags');
+    return { pattern: input, flags: flags === undefined ? '' : flags };
+  }
+  const pattern = anOwn(input, 'pattern');
+  if (input && typeof input === 'object' && typeof pattern === 'string') {
+    const flags = anOwn(input, 'flags');
+    return { pattern, flags: flags === undefined ? '' : flags };
   }
   throw new TypeError('analyzeRegex expects a pattern string or a RegExp');
 }
@@ -1037,7 +1112,7 @@ export function analyzeRegex(input, options) {
 
   visit(ast.body, { quantifiers: [], lookarounds: 0 });
 
-  if (opts.includeBroad !== false) {
+  if (anOwn(opts, 'includeBroad') !== false) {
     const broad = [];
     const collectBroad = (node) => {
       if (!node) return;
@@ -1081,8 +1156,15 @@ export function analyzeRegex(input, options) {
   }
 
   const ordered = anSort(findings);
-  const limited = ordered.slice(0, opts.maxFindings === undefined ? 100 : Math.max(0, opts.maxFindings));
-  const witnesses = opts.witnesses === false ? [] : generateWitnesses(ast, limited);
+  const maxFindingsOption = anOwn(opts, 'maxFindings');
+  const maxFindings = maxFindingsOption === undefined ? 100 : maxFindingsOption;
+  if (!Number.isInteger(maxFindings) || maxFindings < 0) {
+    // A negative or non-numeric cap used to slice away every finding and
+    // report the pattern as safe, which turned a typo into a silent bypass.
+    throw new TypeError('maxFindings must be a non-negative integer');
+  }
+  const limited = ordered.slice(0, maxFindings);
+  const witnesses = anOwn(opts, 'witnesses') === false ? [] : generateWitnesses(ast, limited);
   const risk = anRisk(limited);
   const complexity = {
     starHeight: anStarHeight(ast.body),
@@ -1119,16 +1201,27 @@ function anIsAnchored(body) {
   return Boolean(first && first.type === 'anchor' && first.kind === 'start');
 }
 
+function anThreshold(options) {
+  const supplied = anOwn(options, 'threshold');
+  const value = supplied === undefined ? 'medium' : supplied;
+  if (typeof value !== 'string' || !Object.prototype.hasOwnProperty.call(AN_RISK_ORDER, value)) {
+    // An unknown threshold used to make every comparison false, so
+    // assertSafeRegex silently accepted critical patterns.
+    throw new TypeError('threshold must be one of safe, low, medium, high, critical');
+  }
+  return value;
+}
+
 export function isSafeRegex(input, options) {
   const opts = options || {};
+  const threshold = anThreshold(opts);
   const analysis = analyzeRegex(input, opts);
-  const threshold = opts.threshold || 'medium';
   return AN_RISK_ORDER[analysis.risk] < AN_RISK_ORDER[threshold];
 }
 
 export function assertSafeRegex(input, options) {
+  const threshold = anThreshold(options);
   const analysis = analyzeRegex(input, options);
-  const threshold = (options && options.threshold) || 'medium';
   if (AN_RISK_ORDER[analysis.risk] >= AN_RISK_ORDER[threshold]) {
     throw new UnsafeRegexError(analysis);
   }

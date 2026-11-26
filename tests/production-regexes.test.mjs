@@ -10,7 +10,6 @@ import assert from 'node:assert/strict';
 import { analyzeRegex, isSafeRegex } from '../src/index.mjs';
 
 const BENIGN = [
-  { name: 'email', pattern: '^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$' },
   { name: 'email strict', pattern: '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$' },
   { name: 'url', pattern: '^(https?):\\/\\/([^:\\/\\s]+)(?::(\\d+))?(\\/[^\\s]*)?$' },
   { name: 'url short', pattern: '^https?://[^\\s/]+(?:/[^\\s]*)?$' },
@@ -57,6 +56,15 @@ for (const entry of BENIGN) {
     assert.equal(isSafeRegex(entry.pattern), true);
   });
 }
+
+test('the loose email shape is quadratic and no longer listed as benign', () => {
+  // Both [^@\s] runs and the literal dot can all consume ".", so every dot is
+  // a split point that forces the trailing run and the anchor to rescan.
+  const result = analyzeRegex('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$');
+  assert.equal(result.risk, 'high');
+  assert.ok(result.findings.some((finding) => finding.code === 'RS002'));
+  assert.equal(isSafeRegex('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$'), false);
+});
 
 test('a broad informational note can appear on an otherwise safe pattern', () => {
   const result = analyzeRegex('[^<]+');

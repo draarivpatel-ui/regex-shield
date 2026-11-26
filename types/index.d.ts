@@ -159,6 +159,7 @@ export declare class CharSet {
   readonly isEmpty: boolean;
   readonly size: number;
   static literal(codePoint: number): CharSet;
+  static fromCodePoints(codePoints: number[]): CharSet;
   static category(letter: string, negated: boolean): CharSet;
   static dot(): CharSet;
   static universe(): CharSet;

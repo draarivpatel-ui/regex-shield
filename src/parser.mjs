@@ -11,9 +11,13 @@
 // outside unicode mode, and decimal escapes above the capture count fall back to
 // legacy octal).
 
-import { CharSet, csComplement } from './charset.mjs';
+import { CharSet, csCaseFold, csCaseVariants, csComplement } from './charset.mjs';
 
 const PN_ALLOWED_FLAGS = 'dgimsuvy';
+// Recursive descent needs one stack frame per nested group. Node accepts far
+// deeper patterns than the analyzer can walk safely, so refuse pathological
+// nesting with a controlled parse error instead of a RangeError.
+const PN_MAX_NESTING = 500;
 
 // JavaScript identifiers allow the zero width non joiner and joiner, written here
 // as escapes so the source stays readable.
@@ -37,6 +41,28 @@ function pnIsHexDigit(ch) {
   return ch !== undefined && /[0-9a-fA-F]/.test(ch);
 }
 
+// The /i flag changes the language every atom matches. Classes are folded when
+// they are built (before negation); literals gain their case variants here so
+// the analyzer can build the full set from one node.
+function pnApplyCaseFold(node) {
+  if (!node || typeof node !== 'object') return;
+  if (node.type === 'char') {
+    node.codePoints = csCaseVariants(node.codePoint);
+    return;
+  }
+  if (node.type === 'group' || node.type === 'quantifier') {
+    pnApplyCaseFold(node.body);
+    return;
+  }
+  if (node.type === 'sequence') {
+    node.elements.forEach(pnApplyCaseFold);
+    return;
+  }
+  if (node.type === 'alternation') {
+    node.options.forEach(pnApplyCaseFold);
+  }
+}
+
 class RegexParser {
   constructor(source, flags) {
     this.source = source;
@@ -46,6 +72,10 @@ class RegexParser {
     this.groupNames = [];
     this.backrefs = [];
     this.unicode = flags.includes('u') || flags.includes('v');
+    this.vMode = flags.includes('v');
+    this.ignoreCase = flags.includes('i');
+    this.dotAll = flags.includes('s');
+    this.depth = 0;
   }
 
   error(message, index) {
@@ -72,6 +102,7 @@ class RegexParser {
     const body = this.parseDisjunction();
     if (!this.eof()) this.error('Unmatched closing parenthesis');
     this.resolveBackreferences(body);
+    if (this.ignoreCase) pnApplyCaseFold(body);
     return {
       type: 'root',
       pattern: this.source,
@@ -201,7 +232,12 @@ class RegexParser {
     if (ch === '[') return this.parseClass();
     if (ch === '.') {
       this.pos += 1;
-      return { type: 'dot', index: start, end: this.pos, set: CharSet.dot() };
+      return {
+        type: 'dot',
+        index: start,
+        end: this.pos,
+        set: this.dotAll ? CharSet.universe() : CharSet.dot()
+      };
     }
     if (ch === '^') {
       this.pos += 1;
@@ -228,6 +264,10 @@ class RegexParser {
 
   parseGroup() {
     const start = this.pos;
+    this.depth += 1;
+    if (this.depth > PN_MAX_NESTING) {
+      this.error('Regular expression is nested too deeply', start);
+    }
     this.pos += 1;
     let kind = 'capture';
     let lookKind = null;
@@ -276,6 +316,7 @@ class RegexParser {
     }
     const body = this.parseDisjunction();
     if (!this.eat(')')) this.error('Unterminated group', start);
+    this.depth -= 1;
     return {
       type: 'group',
       kind,
@@ -294,8 +335,23 @@ class RegexParser {
     const negated = this.eat('^');
     const items = [];
     while (!this.eof() && this.peek() !== ']') {
+      // v-mode class set notation is a different grammar. Silently reading
+      // "[[a-z]--[aeiou]]" as flat literals would produce a wrong verdict, so
+      // unsupported operators fail closed with a parse error.
+      if (this.vMode && this.peek() === '[') {
+        this.error('Nested character classes are not supported in v mode');
+      }
+      if (this.vMode && this.peek() === '-' && this.peek(1) === '-') {
+        this.error('Character class subtraction is not supported in v mode');
+      }
+      if (this.vMode && this.peek() === '&' && this.peek(1) === '&') {
+        this.error('Character class intersection is not supported in v mode');
+      }
       const first = this.parseClassAtom();
       if (this.peek() === '-' && this.peek(1) !== ']' && this.peek(1) !== undefined) {
+        if (this.vMode && this.peek(1) === '-') {
+          this.error('Character class subtraction is not supported in v mode', this.pos);
+        }
         const dashPos = this.pos;
         this.pos += 1;
         const second = this.parseClassAtom();
@@ -320,7 +376,11 @@ class RegexParser {
       else if (item.kind === 'range') ranges.push([item.lo, item.hi]);
       else for (const range of item.set.ranges) ranges.push(range);
     }
-    const set = new CharSet(negated ? csComplement(ranges) : ranges, {
+    // Fold the class content first and negate afterwards. Folding the
+    // complement would re-admit an excluded letter through its other case, so
+    // /[^a]/i would wrongly start matching "a".
+    const effective = this.ignoreCase ? csCaseFold(ranges) : ranges;
+    const set = new CharSet(negated ? csComplement(effective) : effective, {
       source: 'class',
       negated,
       raw: this.source.slice(start, this.pos)
@@ -482,12 +542,19 @@ class RegexParser {
       return node;
     }
     if (/[1-9]/.test(ch) && inClass) {
+      // Annex B: \8 and \9 are identity escapes, not octal digits. Parsing
+      // them as octal produced NaN and silently turned [\8] into NUL, which
+      // hid real overlaps such as /[\8]+8+/.
+      if (ch === '8' || ch === '9') return charNode(ch.codePointAt(0));
       let digits = ch;
       while (!this.eof() && digits.length < 3 && /[0-7]/.test(this.peek())) {
         digits += this.peek();
         this.pos += 1;
       }
       return charNode(parseInt(digits, 8));
+    }
+    if (ch === 'q' && inClass && this.vMode && this.peek() === '{') {
+      this.error('String disjunctions in character classes are not supported in v mode', start);
     }
     return charNode(ch.codePointAt(0));
   }

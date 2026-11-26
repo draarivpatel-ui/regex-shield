@@ -27,7 +27,15 @@ const CS_CATEGORIES = {
   ]
 };
 
-const CS_DOT_RANGES = [[0x00, 0x09], [0x0b, 0x0c], [0x0e, 0x10ffff]];
+// JavaScript's dot excludes every LineTerminator: LF, CR, LS and PS. The
+// analyzer previously forgot U+2028 and U+2029, which made overlap tests treat
+// a dot as able to consume them.
+const CS_DOT_RANGES = [
+  [0x00, 0x09],
+  [0x0b, 0x0c],
+  [0x0e, 0x2027],
+  [0x202a, 0x10ffff]
+];
 
 export function csNormalize(ranges) {
   if (!Array.isArray(ranges) || ranges.length === 0) return [];
@@ -66,6 +74,54 @@ export function csComplement(ranges) {
   }
   if (cursor <= CS_MAX_CODE_POINT) result.push([cursor, CS_MAX_CODE_POINT]);
   return result;
+}
+
+function foldCodePoint(codePoint, out) {
+  out.add(codePoint);
+  if (!Number.isInteger(codePoint) || codePoint < 0 || codePoint > CS_MAX_CODE_POINT) return;
+  try {
+    const text = String.fromCodePoint(codePoint);
+    const lower = text.toLowerCase();
+    const upper = text.toUpperCase();
+    if ([...lower].length === 1) out.add(lower.codePointAt(0));
+    if ([...upper].length === 1) out.add(upper.codePointAt(0));
+  } catch (_) {
+    // Lone surrogates and engines without String.fromCodePoint keep the literal.
+  }
+}
+
+/** Code points that case-fold to (or from) ``codePoint`` under the /i flag. */
+export function csCaseVariants(codePoint) {
+  const points = new Set();
+  foldCodePoint(codePoint, points);
+  return Array.from(points).sort((left, right) => left - right);
+}
+
+/**
+ * Case-insensitive closure of a set. ASCII letters are folded exactly by
+ * shifting the A-Z and a-z slices. Other cased code points are folded one by
+ * one for bounded ranges; a huge range such as \p{L} is already an
+ * over-approximation, so folding it would only add cost.
+ */
+export function csCaseFold(ranges) {
+  const out = [];
+  for (const [lo, hi] of csNormalize(ranges)) {
+    out.push([lo, hi]);
+    const upperLo = Math.max(lo, 0x41);
+    const upperHi = Math.min(hi, 0x5a);
+    if (upperLo <= upperHi) out.push([upperLo + 0x20, upperHi + 0x20]);
+    const lowerLo = Math.max(lo, 0x61);
+    const lowerHi = Math.min(hi, 0x7a);
+    if (lowerLo <= lowerHi) out.push([lowerLo - 0x20, lowerHi - 0x20]);
+    if (hi - lo <= 512) {
+      const points = new Set();
+      for (let codePoint = lo; codePoint <= hi; codePoint += 1) foldCodePoint(codePoint, points);
+      for (const codePoint of points) {
+        if (codePoint < lo || codePoint > hi) out.push([codePoint, codePoint]);
+      }
+    }
+  }
+  return csNormalize(out);
 }
 
 export function csUnion() {
@@ -183,6 +239,14 @@ export class CharSet {
 
   static literal(codePoint) {
     return new CharSet([[codePoint, codePoint]], { source: 'literal' });
+  }
+
+  static fromCodePoints(codePoints) {
+    const ranges = [];
+    for (const codePoint of codePoints || []) {
+      if (Number.isInteger(codePoint)) ranges.push([codePoint, codePoint]);
+    }
+    return new CharSet(ranges, { source: 'literal' });
   }
 
   static category(letter, negated) {
