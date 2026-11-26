@@ -113,8 +113,21 @@ test('v-mode class set operations fail closed instead of being misread', () => {
   for (const pattern of ['[[a-z]--[aeiou]]', '[a--b]', '[\\q{ab}]']) {
     assert.throws(() => analyzeRegex(pattern, { flags: 'v' }), RegexParseError, pattern);
   }
-  // Simple v-mode classes still analyze.
-  assert.equal(analyzeRegex('[a-z]+', { flags: 'v' }).risk, 'safe');
+  // Simple v-mode classes analyze when the platform knows the flag. Node 18
+  // does not, so the same input must fail closed there instead of being misread.
+  const supportsVMode = (() => {
+    try {
+      new RegExp('a', 'v');
+      return true;
+    } catch {
+      return false;
+    }
+  })();
+  if (supportsVMode) {
+    assert.equal(analyzeRegex('[a-z]+', { flags: 'v' }).risk, 'safe');
+  } else {
+    assert.throws(() => analyzeRegex('[a-z]+', { flags: 'v' }), RegexParseError);
+  }
 });
 
 test('an unknown threshold throws instead of silently passing critical patterns', () => {
