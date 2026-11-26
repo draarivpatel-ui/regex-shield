@@ -77,7 +77,7 @@ function build() {
   parts.push('  return entry.exports;');
   parts.push('}');
   for (const id of MODULES) {
-    const source = readFileSync(join(ROOT, 'src', id), 'utf8');
+    const source = readFileSync(join(ROOT, 'src', id), 'utf8').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
     const { body, tail } = transform(source, id);
     parts.push(`__internalDefine('${id}', function (__exports, __internalRequire) {`);
     parts.push(`// ---- src/${id} ----`);

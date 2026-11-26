@@ -1,4 +1,4 @@
-// Type definitions for regex-shield 1.0.0
+// Type definitions for @aarivbuildz/regex-shield 1.0.0
 // The package ships as ESM and CommonJS from the same named exports.
 
 export type RiskLevel = 'safe' | 'low' | 'medium' | 'high' | 'critical';

@@ -1,4 +1,4 @@
-# regex-shield
+# @aarivbuildz/regex-shield
 
 Static ReDoS analysis for JavaScript regular expressions, with a real regex
 parser and CWE-1333 classification.
@@ -15,13 +15,13 @@ Zero dependencies at runtime. Node 18 or later. ESM and CommonJS from the same
 named exports, with TypeScript definitions.
 
 ```
-npm install regex-shield
+npm install @aarivbuildz/regex-shield
 ```
 
 ## Quick start
 
 ```js
-import { analyzeRegex, isSafeRegex, assertSafeRegex } from 'regex-shield';
+import { analyzeRegex, isSafeRegex, assertSafeRegex } from '@aarivbuildz/regex-shield';
 
 const result = analyzeRegex('(a+)+$');
 result.risk;       // 'critical'
@@ -34,14 +34,14 @@ result.witnessHint; // 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa!'
 CommonJS works without a build step:
 
 ```js
-const { analyzeRegex } = require('regex-shield');
+const { analyzeRegex } = require('@aarivbuildz/regex-shield');
 console.log(analyzeRegex('^(a|aa)+$').risk); // 'critical'
 ```
 
 Gate untrusted patterns in a validator or a plugin loader:
 
 ```js
-import { assertSafeRegex, UnsafeRegexError } from 'regex-shield';
+import { assertSafeRegex, UnsafeRegexError } from '@aarivbuildz/regex-shield';
 
 try {
   assertSafeRegex(userSuppliedPattern);
@@ -230,7 +230,8 @@ which matches the cost paid by a linter or a CI gate.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Security reports go through
+See [CONTRIBUTING.md](CONTRIBUTING.md) and
+[GOOD_FIRST_ISSUES.md](GOOD_FIRST_ISSUES.md). Security reports go through
 [SECURITY.md](SECURITY.md).
 
 ## License

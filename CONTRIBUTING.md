@@ -27,7 +27,7 @@ npm test
 Useful commands:
 
 ```sh
-npm test                  # node --test tests/
+npm test                  # explicit tests/*.test.mjs glob through scripts/run-tests.mjs
 npm run test:coverage     # coverage report from the built in runner
 npm run build:cjs         # regenerate cjs/index.cjs from src/
 npm run check:cjs         # verify the committed CJS artifact is current

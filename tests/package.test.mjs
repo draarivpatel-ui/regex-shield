@@ -23,7 +23,7 @@ function walk(dir) {
 }
 
 test('package metadata is complete', () => {
-  assert.equal(pkg.name, 'regex-shield');
+  assert.equal(pkg.name, '@aarivbuildz/regex-shield');
   assert.match(pkg.version, /^\d+\.\d+\.\d+$/);
   assert.equal(pkg.license, 'MIT');
   assert.equal(pkg.type, 'module');

@@ -1,5 +1,5 @@
 {
-  "name": "regex-shield",
+  "name": "@aarivbuildz/regex-shield",
   "version": "1.0.0",
   "description": "Zero-dependency ReDoS and catastrophic-backtracking analyzer for JavaScript regular expressions, with a real regex AST parser and CWE-1333 classification.",
   "license": "MIT",
@@ -27,15 +27,16 @@
     "README.md",
     "LICENSE",
     "SECURITY.md",
-    "CONTRIBUTING.md"
+    "CONTRIBUTING.md",
+    "GOOD_FIRST_ISSUES.md"
   ],
   "sideEffects": false,
   "engines": {
     "node": ">=18.0.0"
   },
   "scripts": {
-    "test": "node --test tests/",
-    "test:coverage": "node --test --experimental-test-coverage tests/",
+    "test": "node scripts/run-tests.mjs tests/*.test.mjs",
+    "test:coverage": "node scripts/run-tests.mjs --experimental-test-coverage tests/*.test.mjs",
     "bench": "node benchmarks/bench.mjs",
     "build:cjs": "node scripts/build-cjs.mjs",
     "check:cjs": "node scripts/build-cjs.mjs --check"
@@ -61,5 +62,8 @@
   "bugs": {
     "url": "https://github.com/draarivpatel-ui/regex-shield/issues"
   },
-  "homepage": "https://github.com/draarivpatel-ui/regex-shield#readme"
+  "homepage": "https://github.com/draarivpatel-ui/regex-shield#readme",
+  "publishConfig": {
+    "access": "public"
+  }
 }
