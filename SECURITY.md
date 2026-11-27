@@ -11,18 +11,24 @@ released as patch versions on the latest minor line.
 
 ## Reporting a vulnerability
 
-Do not open a public issue for a suspected vulnerability. Use the GitHub private
-vulnerability reporting flow:
+Do not open a public issue for a suspected vulnerability. [Report a vulnerability privately through GitHub](https://github.com/draarivpatel-ui/regex-shield/security/advisories/new).
 
-1. Open the repository Security tab.
-2. Select "Report a vulnerability", or open
-   https://github.com/draarivpatel-ui/regex-shield/security/advisories/new
-   directly.
-3. Include the pattern, the flags, the observed analysis, and the expected
-   analysis.
+Please include:
 
-A maintainer will acknowledge the report, reproduce it with the current test
-suite, and coordinate a release. Please allow up to 90 days for disclosure.
+- A minimal reproduction that uses synthetic input only.
+- The affected project version, commit or action ref, and Node.js version.
+- The expected security boundary and the observed violation.
+- Logs, output, or proof-of-concept code needed to reproduce the finding, with real secrets removed.
+
+Never include a real token, cookie, password, private key, production log line or real personal data in a report.
+
+Vulnerability handling steps:
+
+1. The maintainer acknowledges the private report within 72 hours.
+2. The maintainer reproduces the finding against the latest supported version and confirms severity within 14 days when enough information is available.
+3. A fix is developed privately, with regression coverage where practical.
+4. The maintainer coordinates the advisory, affected versions, reporter credit and disclosure date with the reporter.
+5. The target coordinated disclosure window is 90 days or less from acknowledgment. If more time is needed, the maintainer and reporter agree on a new date before disclosure.
 
 ## Scope
 
