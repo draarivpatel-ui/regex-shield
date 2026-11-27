@@ -1,5 +1,7 @@
 # @aarivbuildz/regex-shield
 
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/draarivpatel-ui/regex-shield/badge)](https://scorecard.dev/viewer/?uri=github.com/draarivpatel-ui/regex-shield)
+
 Static ReDoS analysis for JavaScript regular expressions, with a real regex
 parser and CWE-1333 classification.
 
