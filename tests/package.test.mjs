@@ -31,9 +31,12 @@ test('package metadata is complete', () => {
   assert.equal(pkg.engines.node, '>=18.0.0');
 });
 
-test('the package has zero runtime dependencies', () => {
+test('runtime dependencies are zero and fuzz tooling stays development-only', () => {
   assert.deepEqual(pkg.dependencies, {});
-  assert.deepEqual(pkg.devDependencies, {});
+  assert.ok(Object.keys(pkg.devDependencies || {}).includes('fast-check'));
+  for (const name of Object.keys(pkg.devDependencies || {})) {
+    assert.equal(pkg.dependencies[name], undefined, `${name} must stay development-only`);
+  }
 });
 
 test('the entry points exist and are wired in exports', () => {

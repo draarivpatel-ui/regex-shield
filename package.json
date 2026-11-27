@@ -36,13 +36,16 @@
   },
   "scripts": {
     "test": "node scripts/run-tests.mjs tests/*.test.mjs",
+    "test:fuzz": "node --test test/fuzz.test.js",
     "test:coverage": "node scripts/run-tests.mjs --experimental-test-coverage tests/*.test.mjs",
     "bench": "node benchmarks/bench.mjs",
     "build:cjs": "node scripts/build-cjs.mjs",
     "check:cjs": "node scripts/build-cjs.mjs --check"
   },
   "dependencies": {},
-  "devDependencies": {},
+  "devDependencies": {
+    "fast-check": "4.10.3"
+  },
   "keywords": [
     "redos",
     "regex",

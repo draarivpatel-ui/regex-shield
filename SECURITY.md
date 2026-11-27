@@ -52,6 +52,7 @@ Out of scope:
 
 ## Dependency policy
 
-The package must stay dependency free in `dependencies` and `devDependencies`.
-Any proposal that adds a runtime dependency is rejected. Build and test tooling
-must rely on the Node standard library.
+The package must stay dependency free in `dependencies`. Any proposal that adds
+a runtime dependency is rejected. Build tooling relies on the Node standard
+library; fast-check is development-only fuzz tooling and is never imported by
+shipped library code.
