@@ -1165,7 +1165,7 @@ export function analyzeRegex(input, options) {
   }
   const limited = ordered.slice(0, maxFindings);
   const witnesses = anOwn(opts, 'witnesses') === false ? [] : generateWitnesses(ast, limited);
-  const risk = anRisk(limited);
+  const risk = anRisk(ordered);
   const complexity = {
     starHeight: anStarHeight(ast.body),
     quantifierDepth: anQuantifierDepth(ast.body, 0),
@@ -1173,7 +1173,7 @@ export function analyzeRegex(input, options) {
     alternations: anCount(ast.body, (node) => node.type === 'alternation'),
     backreferences: anCount(ast.body, (node) => node.type === 'backref'),
     lookarounds: anCount(ast.body, (node) => node.type === 'group' && node.kind === 'lookaround'),
-    worstCase: anWorstCase(limited)
+    worstCase: anWorstCase(ordered)
   };
   const safe = risk === 'safe' || risk === 'low';
 
@@ -1182,7 +1182,7 @@ export function analyzeRegex(input, options) {
     flags: normalized.flags,
     safe,
     risk,
-    score: anScore(limited),
+    score: anScore(ordered),
     findings: limited,
     witnessHint: witnesses.length > 0 ? witnesses[0].input : '',
     witnesses,

@@ -356,6 +356,15 @@ test('maxFindings caps the returned list', () => {
   assert.equal(result.risk, 'critical');
 });
 
+test('maxFindings zero caps only the returned findings list', () => {
+  const result = analyzeRegex('(a+)+$', { maxFindings: 0 });
+  assert.deepEqual(result.findings, []);
+  assert.equal(result.risk, 'critical');
+  assert.equal(result.safe, false);
+  assert.equal(result.score, 70);
+  assert.equal(result.complexity.worstCase, 'exponential');
+});
+
 test('witnesses can be disabled', () => {
   const result = analyzeRegex('(a+)+$', { witnesses: false });
   assert.deepEqual(result.witnesses, []);

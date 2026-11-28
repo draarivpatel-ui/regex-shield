@@ -76,7 +76,7 @@ Accepts a pattern string, a `RegExp`, or an object with `pattern` and optional
 | `parsed` | Capture count and group names |
 
 Options: `flags`, `threshold` (used by the predicates), `witnesses` (default
-`true`), `includeBroad` (default `true`), and `maxFindings` (default `100`).
+`true`), `includeBroad` (default `true`), and `maxFindings` (default `100`). `maxFindings` caps only the returned findings array; risk, score, safety and worst-case complexity always use every finding.
 
 ### `isSafeRegex(input, options?)`
 
